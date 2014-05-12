@@ -21,7 +21,7 @@ import helper
 #Config vars
 DATA_PATH = "../reuters21578-xml/"
 
-mode = 6
+mode = 1
 classif_mode = 1
 
 pp = pprint.PrettyPrinter(indent=4)
