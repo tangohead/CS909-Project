@@ -43,6 +43,8 @@ def debug_print(string):
 	if DEBUG == True:
 		print string
 
+# DATA LOADING AND PREPROCESSING
+
 def load_data(directory, limit=False, limit_num=1):
 	xml_files = []
 	#Get filenames
@@ -63,45 +65,47 @@ def load_data(directory, limit=False, limit_num=1):
 			debug_print("Loading " + xml_f + "...")
 
 			# parsed_xml = ET.parse(xml_f)
-			soup = BeautifulSoup(open(xml_f))
+			soup = BeautifulSoup(open(xml_f), ["lxml", "xml"])
 			#Grab all the articles
-			load_arts = soup.find_all('reuters')
+			load_arts = soup.find_all('REUTERS')
+			#print soup.prettify()
+			#pp.pprint(soup.find_all('body'))
+			#
 
 			for art in load_arts:
 				tmp_art = {}
 				do_not_add = False
 				#There should only be one text section in the article
-				text_section = art.findAll('text')[0]
+				text_section = art.findAll('TEXT')[0]
 
-				# if text_section.dateline != None:
-				# 	tmp_art['dateline'] = text_section.dateline.string
-				# else:
-				# 	tmp_art['dateline'] = ""
-
-				if text_section.body != None:
-					tmp_art['body'] = text_section.body.string
+				#pp.pprint(text_section.body)
+				body_text = text_section.findAll('BODY')
+				if len(body_text) > 0:
+					tmp_art['body'] = body_text[0].contents[0]
 				else:
 					tmp_art['body'] =  ""
+					do_not_add = True
 
 
-				if art.attrs["lewissplit"] == "TRAIN":
+				if art.attrs["LEWISSPLIT"] == "TRAIN":
 					tmp_art["train"] = True
-				elif art.attrs["lewissplit"] == "TEST":
-					tmp_art['train'] = False
+				elif art.attrs["LEWISSPLIT"] == "TEST":
+					tmp_art["train"] = False
 				else:
 					do_not_add = True
 
-				topics = art.findAll('topics')[0].findAll('d')
-				#print topics
+				topics = art.findAll('TOPICS')[0].findAll('D')
 				tmp_art["topics"] = []
 				for i in topics:
 					topic = i.contents[0]
 					if topic in topics_to_use:
 						tmp_art["topics"].append(topic)
 
-				if len(tmp_art["topics"]) > 0 and do_not_add == False:
-					articles.append(tmp_art)
-					pp.pprint(tmp_art)
+				if do_not_add == False:
+					if (len(tmp_art["topics"]) > 0 or tmp_art["train"] == False):
+						articles.append(tmp_art)
+					#pp.pprint()
+				
 
 				count += 1
 				if limit == True and count >= limit_num:
@@ -120,10 +124,10 @@ def trim_and_token(articles):
 		if test_count < 50 and i["train"] == False:
 			test_list.append(i)
 			test_count += 1
-
-	articles = articles + test_list
-
-	for art in articles[0:150]:
+	
+	articles_select = articles[0:150] + test_list
+	#pp.pprint(articles_select)
+	for art in articles_select:
 		#Slashes replace with a space before we tokenise
 		art['body'] = re.sub("[+/<>()'\"-]", " ", art['body'])
 		art['body'] = re.sub("[0-9]+th", " ", art['body'])
@@ -142,7 +146,8 @@ def trim_and_token(articles):
 			if token in string.punctuation:
 				tokens[i] = None
 
-			if(token.lower in ["reuter", "reuters"]):
+			if(token.lower == "reuter" or token.lower == "reuters"):
+				#print "Herre"
 				tokens[i] = None
 			
 			if token.lower in stopwords.words('english'):
@@ -160,7 +165,7 @@ def trim_and_token(articles):
 			if token != None:
 				trimmed_tokens.append(token)
 
-		art['body_tokens'] = trimmed_tokens
+		art["body_tokens"] = trimmed_tokens
 
 		cleaned_articles.append(art)
 
@@ -171,7 +176,7 @@ def lang_proc(articles):
 	port = PorterStemmer()
 	proc_article = []
 	for article in articles:
-		pos_tag_art = nltk.pos_tag(article['body_tokens'])
+		pos_tag_art = nltk.pos_tag(article["body_tokens"])
 		ne_chunked = nltk.chunk.ne_chunk(pos_tag_art)
 
 		token_list = []
@@ -220,10 +225,12 @@ def lang_proc(articles):
 				freq_tokens[token[comb_factor]] = token
 				freq_tokens[token[comb_factor]]["freq"] = 1
 
-		article['body_token_freq'] = freq_tokens
-		article['body_token_raw'] = token_list
+		article["body_token_freq"] = freq_tokens
+		article["body_token_raw"] = token_list
 		proc_article.append(article)
 	return proc_article
+
+# TOPIC MODEL GENERATORS
 
 def gen_topic_model(articles):
 	token_list = []
@@ -311,6 +318,8 @@ def gen_topic_model_ngram(articles):
 		"articles": articles
 		}
 
+# NGRAM GENERATOR
+
 def gen_ngrams(articles, n):
 	ngram_articles = []
 	for article in articles:
@@ -322,6 +331,8 @@ def gen_ngrams(articles, n):
 		ngram_articles.append(article)
 	return ngram_articles
 
+# DATA CONVERSION
+
 def get_bow_classif_data(articles):
 	token_train_sets = []
 	token_test_sets = []
@@ -329,9 +340,10 @@ def get_bow_classif_data(articles):
 	labels = []
 
 	for article in articles:
-		if article['train'] == True:
+		#print article["train"]
+		if article["train"] == True:
 			doc = ""
-			for i in article['body_token_raw']:
+			for i in article["body_token_raw"]:
 				if i["ne"]:
 					doc += " " + i["token"]
 					corpus += " " + i["token"]
@@ -346,7 +358,8 @@ def get_bow_classif_data(articles):
 
 		else:
 			doc = ""
-			for i in article['body_token_raw']:
+			print "train false"
+			for i in article["body_token_raw"]:
 				
 				if i["ne"]:
 					doc += " " + i["token"]
@@ -413,8 +426,7 @@ def get_ngram_classif_data(articles):
 		"topics": labels,
 	}
 
-
-
+# WORD FEATURE CLASSIFIERS
 
 def build_run_NB(classif_data, vect_data):
 	nb = GaussianNB()
@@ -444,55 +456,6 @@ def build_run_NB(classif_data, vect_data):
 		print "Predicted: " + topics_to_use[i]
 		print classif_data["test_tokens"][count]
 		count += 1
-
-		print "\n"
-
-def build_topmod_NB(articles):
-	nb = GaussianNB()
-
-	#First, we need to arrange our data 
-	#This involves grabbing the train data and labels
-	# vect = vect_data["vectorizer"]
-	
-	test_set = []
-	train_set = []
-	topic_labels = []
-	for i in articles:
-		if i["train"]:
-			for j in i['topics']:
-				train_set.append(i["topic_weights"])
-				topic_labels.append(topics_ids[j])		
-			else:
-				test_set.append(i["topic_weights"])
-
-	nb.fit(train_set, topic_labels)
-
-	#Now we vectorise each of the test entries and try to label them
-	# vect_test_sets = []
-	# for i in classif_data["test_tokens"]:
-	# 	vect_test_sets.append(vect.transform([i]).toarray())
-
-	# test_set = []
-	# for i in vect_test_sets:
-	# 	test_set.append(i[0])
-	# pp.pprint(test_set[0])
-	preds = nb.predict(test_set)
-	# pp.pprint(preds)
-
-	# count = 0
-	# for i in preds[0:20]:
-	# 	print "*"*45
-	# 	print "\n"
-	# 	print "Predicted: " + topics_to_use[i]
-	# 	print classif_data["test_tokens"][count]
-	# 	count += 1
-
-	# 	print "\n"
-	for i in preds[0:20]:
-		print "*"*45
-		print "\n"
-		print "Predicted: " + topics_to_use[i]
-		#print articles[i]["test_tokens"][count]
 
 		print "\n"
 
@@ -557,3 +520,227 @@ def build_run_RF(classif_data, vect_data):
 		count += 1
 
 		print "\n"
+
+## TOPIC MODEL CLASSIFIERS
+
+def build_topmod_NB(articles):
+	nb = GaussianNB()
+
+	#First, we need to arrange our data 
+	#This involves grabbing the train data and labels
+	# vect = vect_data["vectorizer"]
+	
+	test_set = []
+	train_set = []
+	topic_labels = []
+	for i in articles:
+		if i["train"]:
+			for j in i['topics']:
+				train_set.append(i["topic_weights"])
+				topic_labels.append(topics_ids[j])		
+			else:
+				test_set.append(i["topic_weights"])
+
+	nb.fit(train_set, topic_labels)
+
+	#Now we vectorise each of the test entries and try to label them
+	# vect_test_sets = []
+	# for i in classif_data["test_tokens"]:
+	# 	vect_test_sets.append(vect.transform([i]).toarray())
+
+	# test_set = []
+	# for i in vect_test_sets:
+	# 	test_set.append(i[0])
+	# pp.pprint(test_set[0])
+	preds = nb.predict(test_set)
+	# pp.pprint(preds)
+
+	# count = 0
+	# for i in preds[0:20]:
+	# 	print "*"*45
+	# 	print "\n"
+	# 	print "Predicted: " + topics_to_use[i]
+	# 	print classif_data["test_tokens"][count]
+	# 	count += 1
+
+	# 	print "\n"
+	for i in preds[0:20]:
+		print "*"*45
+		print "\n"
+		print "Predicted: " + topics_to_use[i]
+		#print articles[i]["test_tokens"][count]
+
+		print "\n"
+
+def build_topmod_DecTree(articles):
+	dectree = tree.DecisionTreeClassifier()
+
+	#First, we need to arrange our data 
+	#This involves grabbing the train data and labels
+	# vect = vect_data["vectorizer"]
+	
+	test_set = []
+	train_set = []
+	topic_labels = []
+	for i in articles:
+		if i["train"]:
+			for j in i['topics']:
+				train_set.append(i["topic_weights"])
+				topic_labels.append(topics_ids[j])		
+			else:
+				test_set.append(i["topic_weights"])
+
+	dectree.fit(train_set, topic_labels)
+
+	#Now we vectorise each of the test entries and try to label them
+	# vect_test_sets = []
+	# for i in classif_data["test_tokens"]:
+	# 	vect_test_sets.append(vect.transform([i]).toarray())
+
+	# test_set = []
+	# for i in vect_test_sets:
+	# 	test_set.append(i[0])
+	# pp.pprint(test_set[0])
+	preds = dectree.predict(test_set)
+	# pp.pprint(preds)
+
+	# count = 0
+	# for i in preds[0:20]:
+	# 	print "*"*45
+	# 	print "\n"
+	# 	print "Predicted: " + topics_to_use[i]
+	# 	print classif_data["test_tokens"][count]
+	# 	count += 1
+
+	# 	print "\n"
+	for i in preds[0:20]:
+		print "*"*45
+		print "\n"
+		print "Predicted: " + topics_to_use[i]
+		#print articles[i]["test_tokens"][count]
+
+		print "\n"
+
+def build_topmod_RF(articles):
+	rf = RandomForestClassifier()
+
+	#First, we need to arrange our data 
+	#This involves grabbing the train data and labels
+	# vect = vect_data["vectorizer"]
+	
+	test_set = []
+	train_set = []
+	topic_labels = []
+	for i in articles:
+		if i["train"]:
+			for j in i['topics']:
+				train_set.append(i["topic_weights"])
+				topic_labels.append(topics_ids[j])		
+			else:
+				test_set.append(i["topic_weights"])
+
+	rf.fit(train_set, topic_labels)
+
+	#Now we vectorise each of the test entries and try to label them
+	# vect_test_sets = []
+	# for i in classif_data["test_tokens"]:
+	# 	vect_test_sets.append(vect.transform([i]).toarray())
+
+	# test_set = []
+	# for i in vect_test_sets:
+	# 	test_set.append(i[0])
+	# pp.pprint(test_set[0])
+	preds = rf.predict(test_set)
+	# pp.pprint(preds)
+
+	# count = 0
+	# for i in preds[0:20]:
+	# 	print "*"*45
+	# 	print "\n"
+	# 	print "Predicted: " + topics_to_use[i]
+	# 	print classif_data["test_tokens"][count]
+	# 	count += 1
+
+	# 	print "\n"
+	for i in preds[0:20]:
+		print "*"*45
+		print "\n"
+		print "Predicted: " + topics_to_use[i]
+		#print articles[i]["test_tokens"][count]
+
+		print "\n"
+
+# SYSTEM EXECUTORS
+
+def run_bag_of_words(proc_arts, classif=1):
+	bow_classif_data = get_bow_classif_data(proc_arts)
+	bow_vect_data = get_bow_vect_data(bow_classif_data)
+	
+	if classif == 1:
+		build_run_NB(bow_classif_data, bow_vect_data)
+	elif classif == 2:
+		build_run_DecTree(bow_classif_data, bow_vect_data)
+	elif classif == 3:
+		build_run_RF(bow_classif_data, bow_vect_data)
+
+def run_bigram(proc_arts, classif=1):
+	bigrams = helper.gen_ngrams(proc_arts, 2)
+
+	bigram_classif_data = helper.get_ngram_classif_data(bigrams)
+	bigram_vect_data = helper.get_bow_vect_data(bigram_classif_data)
+
+	if classif == 1:
+		build_run_NB(bigram_classif_data, bigram_vect_data)
+	elif classif == 2:
+		build_run_DecTree(bigram_classif_data, bigram_vect_data)
+	else:
+		build_run_RF(bigram_classif_data, bigram_vect_data)
+
+def run_trigram(proc_arts, classif=1):
+	trigrams = helper.gen_ngrams(proc_arts, 3)
+
+	trigram_classif_data = helper.get_ngram_classif_data(trigrams)
+	trigram_vect_data = helper.get_bow_vect_data(trigram_classif_data)
+
+	if classif == 1:
+		build_run_NB(trigram_classif_data, trigram_vect_data)
+	elif classif == 2:
+		build_run_DecTree(trigram_classif_data, trigram_vect_data)
+	else:
+		build_run_RF(trigram_classif_data, trigram_vect_data)
+
+def run_bow_topic_model(proc_arts, classif=1):
+	model = gen_topic_model(proc_arts)
+
+	if classif == 1:
+		build_topmod_NB(model["articles"])
+	elif classif == 2:
+		build_topmod_DecTree(model["articles"])
+	elif classif == 3:
+		build_topmod_RF(model["articles"])
+
+
+def run_bigram_topic_model(proc_arts, classif=1):
+	bigrams = gen_ngrams(proc_arts, 2)
+	model = gen_topic_model_ngram(bigrams)
+	
+	if classif == 1:
+		build_topmod_NB(model["articles"])
+	elif classif == 2:
+		build_topmod_DecTree(model["articles"])
+	elif classif == 3:
+		build_topmod_RF(model["articles"])
+
+
+def run_trigram_topic_model(proc_arts, classif=1):
+	trigrams = gen_ngrams(proc_arts, 3)
+	model = gen_topic_model_ngram(trigrams)
+
+	if classif == 1:
+		build_topmod_NB(model["articles"])
+	elif classif == 2:
+		build_topmod_DecTree(model["articles"])
+	elif classif == 3:
+		build_topmod_RF(model["articles"])
+
+
