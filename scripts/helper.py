@@ -25,10 +25,12 @@ from gensim import corpora, models
 import numpy as np
 
 from sklearn.naive_bayes import GaussianNB
-from sklearn import tree, datasets, cross_validation
+from sklearn import tree, datasets, cross_validation, metrics, mixture
 from sklearn.cross_validation import KFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import pairwise_distances
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -391,6 +393,46 @@ def get_bow_vect_data(classif_data):
 		"train_vect": train_set
 	}
 
+def cluster_kmeans(classif_data, vect_data, filename):
+	km = KMeans(n_clusters=10)
+
+	np_arr_train = np.array(vect_data["train_vect"])
+	np_arr_label = np.array(classif_data["topics"])
+
+	km.fit(np_arr_train)
+	pp.pprint(km.labels_)
+	pp.pprint(metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean'))
+
+	pp.pprint(metrics.homogeneity_score(np_arr_label, km.labels_))
+	pp.pprint(metrics.completeness_score(np_arr_label, km.labels_))
+
+def cluster_EM(classif_data, vect_data, filename):
+	gmm = mixture.GMM(n_components=10)
+
+	np_arr_train = np.array(vect_data["train_vect"])
+	np_arr_label = np.array(classif_data["topics"])
+
+	gmm.fit(np_arr_train)
+	pp.pprint(gmm.means_)
+	pp.pprint(metrics.silhouette_score(np_arr_train, gmm.means_, metric='euclidean'))
+
+	pp.pprint(metrics.homogeneity_score(np_arr_label, gmm.means_))
+	pp.pprint(metrics.completeness_score(np_arr_label, gmm.means_))
+
+def cluster_DB(classif_data, vect_data, filename):
+	db = DBSCAN()
+
+	np_arr_train = np.array(vect_data["train_vect"])
+	np_arr_label = np.array(classif_data["topics"])
+
+	db.fit(np_arr_train)
+	pp.pprint(db.labels_)
+	pp.pprint(metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean'))
+
+	pp.pprint(metrics.homogeneity_score(np_arr_label, db.labels_))
+	pp.pprint(metrics.completeness_score(np_arr_label, db.labels_))
+
+
 def get_ngram_classif_data(articles):
 	token_train_sets = []
 	token_test_sets = []
@@ -625,12 +667,12 @@ def run_bigram(proc_arts, classif=1):
 	bigram_classif_data = get_ngram_classif_data(bigrams)
 	bigram_vect_data = get_bow_vect_data(bigram_classif_data)
 
-	#if classif == 1:
-	build_run_NB(bigram_classif_data, bigram_vect_data, "big-nb")
-	#elif classif == 2:
-	build_run_DecTree(bigram_classif_data, bigram_vect_data, "big-tree")
-	#else:
-	build_run_RF(bigram_classif_data, bigram_vect_data, "big-rf")
+	if classif == 1:
+		build_run_NB(bigram_classif_data, bigram_vect_data, "big-nb")
+	elif classif == 2:
+		build_run_DecTree(bigram_classif_data, bigram_vect_data, "big-tree")
+	else:
+		build_run_RF(bigram_classif_data, bigram_vect_data, "big-rf")
 
 def run_trigram(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
@@ -638,43 +680,56 @@ def run_trigram(proc_arts, classif=1):
 	trigram_classif_data = get_ngram_classif_data(trigrams)
 	trigram_vect_data = get_bow_vect_data(trigram_classif_data)
 
-	#if classif == 1:
-	build_run_NB(trigram_classif_data, trigram_vect_data, "trig-nb")
-	#elif classif == 2:
-	build_run_DecTree(trigram_classif_data, trigram_vect_data, "trig-tree")
-	#else:
-	build_run_RF(trigram_classif_data, trigram_vect_data, "trig-rf")
+	if classif == 1:
+		build_run_NB(trigram_classif_data, trigram_vect_data, "trig-nb")
+	elif classif == 2:
+		build_run_DecTree(trigram_classif_data, trigram_vect_data, "trig-tree")
+	else:
+		build_run_RF(trigram_classif_data, trigram_vect_data, "trig-rf")
 
 def run_bow_topic_model(proc_arts, classif=1):
 	model = gen_topic_model(proc_arts)
 
-	#if classif == 1:
-	build_topmod_NB(model["articles"], "bow-topmod-nb")
-	#elif classif == 2:
-	build_topmod_DecTree(model["articles"], "bow-topmod-tree")
-	#elif classif == 3:
-	build_topmod_RF(model["articles"], "bow-topmod-rf")
+	if classif == 1:
+		build_topmod_NB(model["articles"], "bow-topmod-nb")
+	elif classif == 2:
+		build_topmod_DecTree(model["articles"], "bow-topmod-tree")
+	elif classif == 3:
+		build_topmod_RF(model["articles"], "bow-topmod-rf")
 
 def run_bigram_topic_model(proc_arts, classif=1):
 	bigrams = gen_ngrams(proc_arts, 2)
 	model = gen_topic_model_ngram(bigrams)
 	
-	#if classif == 1:
-	build_topmod_NB(model["articles"], "big-topmod-nb")
-	#elif classif == 2:
-	build_topmod_DecTree(model["articles"], "big-topmod-tree")
-	#elif classif == 3:
-	build_topmod_RF(model["articles"], "big-topmod-rf")
+	if classif == 1:
+		build_topmod_NB(model["articles"], "big-topmod-nb")
+	elif classif == 2:
+		build_topmod_DecTree(model["articles"], "big-topmod-tree")
+	elif classif == 3:
+		build_topmod_RF(model["articles"], "big-topmod-rf")
 
 def run_trigram_topic_model(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
 	model = gen_topic_model_ngram(trigrams)
 
-	#if classif == 1:
-	build_topmod_NB(model["articles"], "trig-topmod-nb")
-	#elif classif == 2:
-	build_topmod_DecTree(model["articles"], "trig-topmod-tree")
-	#elif classif == 3:
-	build_topmod_RF(model["articles"], "trig-topmod-rf")
+	if classif == 1:
+		build_topmod_NB(model["articles"], "trig-topmod-nb")
+	elif classif == 2:
+		build_topmod_DecTree(model["articles"], "trig-topmod-tree")
+	elif classif == 3:
+		build_topmod_RF(model["articles"], "trig-topmod-rf")
 
 
+def run_bag_of_words_cluster(proc_arts, classif=1):
+	bow_classif_data = get_bow_classif_data(proc_arts)
+	bow_vect_data = get_bow_vect_data(bow_classif_data)
+	
+	# if classif == 1:
+	cluster_kmeans(bow_classif_data, bow_vect_data, "clus")
+	cluster_DB(bow_classif_data, bow_vect_data, "clus")
+	cluster_EM(bow_classif_data, bow_vect_data, "clus")
+	
+	# elif classif == 2:
+	# 	build_run_DecTree(bow_classif_data, bow_vect_data, "bow-tree")
+	# elif classif == 3:
+	# 	build_run_RF(bow_classif_data, bow_vect_data, "bow-rf")

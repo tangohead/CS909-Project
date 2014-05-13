@@ -42,21 +42,26 @@ if args.limit == 1:
 	limit_load = True
 limit_size = args.limit_size
 
-tok_store = "token_stash.p"
+tok_store = "token_stash2.p"
 
 pp = pprint.PrettyPrinter(indent=4)
 
 proc_arts = None
 print os.path.isfile(tok_store)
 if os.path.isfile(tok_store) == False:
-	# Load then preprocess
+	#Load then preprocess
 	articles = helper.load_data(DATA_PATH, limit=limit_load, limit_num=limit_size)
 	clean_arts = helper.trim_and_token(articles)
 
 	proc_arts = helper.lang_proc(clean_arts)
-	pickle.dump(proc_arts, open(tok_store, "wb"))
+	store = open(tok_store, "wb")
+	pickle.dump(proc_arts, store)
+	store.close()
 else:
-	proc_arts = pickle.load(open(tok_store, "rb"))
+	store = open(tok_store, "rb")
+	proc_arts = pickle.load(store)
+	store.close()
+
 
 if mode == 1:
 	helper.run_bag_of_words(proc_arts, classif=classif_mode)
@@ -70,6 +75,8 @@ elif mode == 5:
 	helper.run_bigram_topic_model(proc_arts, classif=classif_mode)
 elif mode == 6:
 	helper.run_trigram_topic_model(proc_arts, classif=classif_mode)
+elif mode == 7:
+	helper.run_bag_of_words_cluster(proc_arts, classif=classif_mode)
 
 
 helper.close_log()
