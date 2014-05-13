@@ -112,7 +112,7 @@ def load_data(directory, limit=False, limit_num=1):
 				topics = art.findAll('TOPICS')[0].findAll('D')
 				tmp_art["topics"] = []
 				for i in topics:
-					topic = i.contents[0]
+					topic = str(i.contents[0])
 					if topic in topics_to_use:
 						tmp_art["topics"].append(topic)
 
@@ -134,7 +134,7 @@ def trim_and_token(articles):
 	count = 0
 	for art in articles:
 		if count % 500 == 0:
-			log.write("Processing article " + str(count) + "\n")
+			log.write("Tokenising article " + str(count) + "\n")
 			log.flush()
 		count += 1
 		#Slashes replace with a space before we tokenise
@@ -220,8 +220,13 @@ def lang_proc(articles):
 						}
 					token_list.append(tmp_lst)
 
-		article["body_token_raw"] = token_list
-		proc_article.append(article)
+		new_art = {
+			"train": article["train"],
+			"body_token_raw": token_list,
+			"topics": article["topics"],
+		}
+		#article["body_token_raw"] = token_list
+		proc_article.append(new_art)
 	return proc_article
 
 # TOPIC MODEL GENERATORS
@@ -428,6 +433,7 @@ def run_k_fold(classif, train_set, label_set, filename):
 	print_str = ""
 	for train, test in kf:
 		log.write("Fold " + str(fold_count) + "\n")
+		log.flush()
 		fold_count += 1
 		cf = classif()
 		#build our train & test set
@@ -619,12 +625,12 @@ def run_bigram(proc_arts, classif=1):
 	bigram_classif_data = get_ngram_classif_data(bigrams)
 	bigram_vect_data = get_bow_vect_data(bigram_classif_data)
 
-	if classif == 1:
-		build_run_NB(bigram_classif_data, bigram_vect_data, "big-nb")
-	elif classif == 2:
-		build_run_DecTree(bigram_classif_data, bigram_vect_data, "big-tree")
-	else:
-		build_run_RF(bigram_classif_data, bigram_vect_data, "big-rf")
+	#if classif == 1:
+	build_run_NB(bigram_classif_data, bigram_vect_data, "big-nb")
+	#elif classif == 2:
+	build_run_DecTree(bigram_classif_data, bigram_vect_data, "big-tree")
+	#else:
+	build_run_RF(bigram_classif_data, bigram_vect_data, "big-rf")
 
 def run_trigram(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
@@ -632,43 +638,43 @@ def run_trigram(proc_arts, classif=1):
 	trigram_classif_data = get_ngram_classif_data(trigrams)
 	trigram_vect_data = get_bow_vect_data(trigram_classif_data)
 
-	if classif == 1:
-		build_run_NB(trigram_classif_data, trigram_vect_data, "trig-nb")
-	elif classif == 2:
-		build_run_DecTree(trigram_classif_data, trigram_vect_data, "trig-tree")
-	else:
-		build_run_RF(trigram_classif_data, trigram_vect_data, "trig-rf")
+	#if classif == 1:
+	build_run_NB(trigram_classif_data, trigram_vect_data, "trig-nb")
+	#elif classif == 2:
+	build_run_DecTree(trigram_classif_data, trigram_vect_data, "trig-tree")
+	#else:
+	build_run_RF(trigram_classif_data, trigram_vect_data, "trig-rf")
 
 def run_bow_topic_model(proc_arts, classif=1):
 	model = gen_topic_model(proc_arts)
 
-	if classif == 1:
-		build_topmod_NB(model["articles"], "bow-topmod-nb")
-	elif classif == 2:
-		build_topmod_DecTree(model["articles"], "bow-topmod-tree")
-	elif classif == 3:
-		build_topmod_RF(model["articles"], "bow-topmod-rf")
+	#if classif == 1:
+	build_topmod_NB(model["articles"], "bow-topmod-nb")
+	#elif classif == 2:
+	build_topmod_DecTree(model["articles"], "bow-topmod-tree")
+	#elif classif == 3:
+	build_topmod_RF(model["articles"], "bow-topmod-rf")
 
 def run_bigram_topic_model(proc_arts, classif=1):
 	bigrams = gen_ngrams(proc_arts, 2)
 	model = gen_topic_model_ngram(bigrams)
 	
-	if classif == 1:
-		build_topmod_NB(model["articles"], "big-topmod-nb")
-	elif classif == 2:
-		build_topmod_DecTree(model["articles"], "big-topmod-tree")
-	elif classif == 3:
-		build_topmod_RF(model["articles"], "big-topmod-rf")
+	#if classif == 1:
+	build_topmod_NB(model["articles"], "big-topmod-nb")
+	#elif classif == 2:
+	build_topmod_DecTree(model["articles"], "big-topmod-tree")
+	#elif classif == 3:
+	build_topmod_RF(model["articles"], "big-topmod-rf")
 
 def run_trigram_topic_model(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
 	model = gen_topic_model_ngram(trigrams)
 
-	if classif == 1:
-		build_topmod_NB(model["articles"], "trig-topmod-nb")
-	elif classif == 2:
-		build_topmod_DecTree(model["articles"], "trig-topmod-tree")
-	elif classif == 3:
-		build_topmod_RF(model["articles"], "trig-topmod-rf")
+	#if classif == 1:
+	build_topmod_NB(model["articles"], "trig-topmod-nb")
+	#elif classif == 2:
+	build_topmod_DecTree(model["articles"], "trig-topmod-tree")
+	#elif classif == 3:
+	build_topmod_RF(model["articles"], "trig-topmod-rf")
 
 

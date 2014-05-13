@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 #  Python 2.7
 # - BeautifulSoup4 (pip install BeautifulSoup4)
 # - lxml (pip install lzxml)
@@ -20,6 +22,8 @@ import pprint
 #Modules
 import helper
 
+import pickle
+
 #Config vars
 DATA_PATH = "../reuters21578-xml/"
 
@@ -38,14 +42,21 @@ if args.limit == 1:
 	limit_load = True
 limit_size = args.limit_size
 
+tok_store = "token_stash.p"
+
 pp = pprint.PrettyPrinter(indent=4)
 
+proc_arts = None
+print os.path.isfile(tok_store)
+if os.path.isfile(tok_store) == False:
+	# Load then preprocess
+	articles = helper.load_data(DATA_PATH, limit=limit_load, limit_num=limit_size)
+	clean_arts = helper.trim_and_token(articles)
 
-# Load then preprocess
-articles = helper.load_data(DATA_PATH, limit=limit_load, limit_num=limit_size)
-clean_arts = helper.trim_and_token(articles)
-
-proc_arts = helper.lang_proc(clean_arts)
+	proc_arts = helper.lang_proc(clean_arts)
+	pickle.dump(proc_arts, open(tok_store, "wb"))
+else:
+	proc_arts = pickle.load(open(tok_store, "rb"))
 
 if mode == 1:
 	helper.run_bag_of_words(proc_arts, classif=classif_mode)
@@ -61,4 +72,4 @@ elif mode == 6:
 	helper.run_trigram_topic_model(proc_arts, classif=classif_mode)
 
 
-helper.log_close()
+helper.close_log()
