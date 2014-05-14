@@ -329,7 +329,11 @@ def gen_ngrams(articles, n):
 		for i in range(len(article['body_token_raw'])-n):
 			ngram_list.append("_".join(article['body_token_raw'][j]["token"] for j in range(i, i+n)))
 		article['ngrams'] = ngram_list
-		ngram_articles.append(article)
+		ngram_articles.append({
+			"ngrams": ngram_list,
+			"topics": article["topics"],
+			"train": article["train"]
+		})
 	return ngram_articles
 
 # DATA CONVERSION
@@ -664,8 +668,13 @@ def run_bag_of_words(proc_arts, classif=1):
 def run_bigram(proc_arts, classif=1):
 	bigrams = gen_ngrams(proc_arts, 2)
 
+	proc_arts = None
+
 	bigram_classif_data = get_ngram_classif_data(bigrams)
+	bigrams = None
 	bigram_vect_data = get_bow_vect_data(bigram_classif_data)
+
+	
 
 	if classif == 1:
 		build_run_NB(bigram_classif_data, bigram_vect_data, "big-nb")
@@ -677,8 +686,13 @@ def run_bigram(proc_arts, classif=1):
 def run_trigram(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
 
+	proc_arts = None
+
 	trigram_classif_data = get_ngram_classif_data(trigrams)
+	trigrams = None
 	trigram_vect_data = get_bow_vect_data(trigram_classif_data)
+
+	
 
 	if classif == 1:
 		build_run_NB(trigram_classif_data, trigram_vect_data, "trig-nb")
