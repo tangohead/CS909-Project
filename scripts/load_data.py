@@ -7,7 +7,6 @@
 
 #For XML parsing
 from bs4 import BeautifulSoup
-import xml.etree.ElementTree as ET
 import nltk
 
 import argparse
@@ -77,6 +76,8 @@ elif mode == 6:
 	helper.run_trigram_topic_model(proc_arts, classif=classif_mode)
 elif mode == 7:
 	helper.run_bag_of_words_cluster(proc_arts, classif=classif_mode)
+elif mode == 8:
+	helper.run_bag_of_words_test(proc_arts)
 
 
 helper.close_log()

@@ -10,7 +10,7 @@ for i in range(1,7):
 print args
 print cwd
 
-for i in args[4:9]:
+for i in args[3:9]:
 	print "*#"*50
 	print "\n"
 	print "RUNNING ARGS " + str(i)

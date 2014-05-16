@@ -23,6 +23,7 @@ import re
 from gensim import corpora, models
 
 import numpy as np
+import pickle
 
 from sklearn.naive_bayes import GaussianNB
 from sklearn import tree, datasets, cross_validation, metrics, mixture
@@ -33,6 +34,9 @@ from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import pairwise_distances
 
 pp = pprint.PrettyPrinter(indent=4)
+
+bigram_stash = "bigram_freq_stash.p"
+trigram_stash = "trigram_freq_stash.p"
 
 DEBUG = True
 topics_to_use = ["earn", "acq", "money-fx", "grain", "crude", "trade", "interest", "ship", "wheat", "corn"]
@@ -149,7 +153,7 @@ def trim_and_token(articles):
 
 		for i in range(0,len(tokens)):
 			token = tokens[i]
-			#Get rid of dots and commas, typically used in acronyms/nums
+			#Get rid of dots and commas, typically used in acronyms
 			token = "".join(c for c in token if c not in (",",".",))
 			tokens[i] = token
 
@@ -323,18 +327,100 @@ def gen_topic_model_ngram(articles):
 
 def gen_ngrams(articles, n):
 	ngram_articles = []
-	for article in articles:
-		ngram_list = []
-		#pp.pprint( article)
-		for i in range(len(article['body_token_raw'])-n):
-			ngram_list.append("_".join(article['body_token_raw'][j]["token"] for j in range(i, i+n)))
-		article['ngrams'] = ngram_list
-		ngram_articles.append({
-			"ngrams": ngram_list,
-			"topics": article["topics"],
-			"train": article["train"]
-		})
-	return ngram_articles
+
+	new_ngram_article_list = []
+	count = 0
+
+	if n == 2:
+		tok_stash = "trimmed_big.p"
+	else:
+		tok_stash = "trimmed_trig.p"
+
+	if os.path.isfile(tok_stash) == False:
+		for article in articles:
+			if count % 500 == 0:
+				log.write("Generating ngrams, " + str(count) + " articles done\n")
+				log.flush()
+			count += 1
+
+			ngram_list = []
+			#pp.pprint( article)
+			for i in range(len(article['body_token_raw'])-n):
+				ngram_list.append("_".join(article['body_token_raw'][j]["token"] for j in range(i, i+n)))
+			
+			ngram_articles.append({
+				"ngrams": ngram_list,
+				"topics": article["topics"],
+				"train": article["train"]
+			})
+		ngram_freq_dict = {}
+		if n == 2:
+			stash = bigram_stash
+		else:
+			stash = trigram_stash
+
+		if os.path.isfile(stash) == False:
+			count = 0
+			for article in ngram_articles:
+				if count % 500 == 0:
+					log.write("Counting ngrams, " + str(count) + " articles done\n")
+					log.flush()
+				count += 1
+				for ngram in article["ngrams"]:
+					if ngram in ngram_freq_dict.keys():
+						ngram_freq_dict[ngram] += 1
+					else:
+						ngram_freq_dict[ngram] = 1
+			store = open(stash, "wb")
+			pickle.dump(ngram_freq_dict, store)
+			store.close()
+		else:
+			store = open(stash, "rb")
+			ngram_freq_dict = pickle.load(store)
+			store.close()
+
+		log.write("Getting Freqs\n")
+		ngrams_to_keep = []
+
+		if n == 2:
+			stash = "bigram_keep.p"
+		else:
+			stash = "trigram_keep.p"
+
+		if os.path.isfile(stash) == False:
+			for i in ngram_freq_dict:
+				if ngram_freq_dict[i] >= 10:
+					ngrams_to_keep.append(i)
+
+			store = open(stash, "wb")
+			pickle.dump(ngrams_to_keep, store)
+			store.close()
+		else:
+			store = open(stash, "rb")
+			ngrams_to_keep = pickle.load(store)
+			store.close()
+
+		for i in ngram_articles:
+			new_ngrams = []
+			for ngram in i["ngrams"]:
+				if ngram in ngrams_to_keep:
+					new_ngrams.append(ngram)
+			
+			if len(new_ngrams) > 0:
+				i["ngrams"] = new_ngrams
+				new_ngram_article_list.append(i)
+
+		ngram_articles = None
+
+		store = open(tok_stash, "wb")
+		pickle.dump(new_ngram_article_list, store)
+		store.close()
+	else:
+		store = open(tok_stash, "rb")
+		new_ngram_article_list = pickle.load(store)
+		store.close()
+
+	return new_ngram_article_list
 
 # DATA CONVERSION
 
@@ -397,44 +483,74 @@ def get_bow_vect_data(classif_data):
 		"train_vect": train_set
 	}
 
-def cluster_kmeans(classif_data, vect_data, filename):
+def cluster_kmeans(classif_data, vect_data):
 	km = KMeans(n_clusters=10)
 
 	np_arr_train = np.array(vect_data["train_vect"])
 	np_arr_label = np.array(classif_data["topics"])
+	np_arr_test = np.array(vect_data["test_vect"])
 
 	km.fit(np_arr_train)
-	pp.pprint(km.labels_)
-	pp.pprint(metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean'))
+	#pp.pprint(km.labels_)
+	print "Kmeans"
+	print "Silhouette" 
+	sil_score = 0
+	for i in range(10):
+		sil_score += metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean', sample_size =5000)
 
-	pp.pprint(metrics.homogeneity_score(np_arr_label, km.labels_))
-	pp.pprint(metrics.completeness_score(np_arr_label, km.labels_))
+	print sil_score/10
 
-def cluster_EM(classif_data, vect_data, filename):
+	print "Homog Comp VMeasure"
+	pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, km.labels_))
+
+	return km.labels_
+
+def cluster_EM(classif_data, vect_data):
 	gmm = mixture.GMM(n_components=10)
 
 	np_arr_train = np.array(vect_data["train_vect"])
 	np_arr_label = np.array(classif_data["topics"])
+	np_arr_test = np.array(vect_data["test_vect"])
+
+	print "GMM"
 
 	gmm.fit(np_arr_train)
-	pp.pprint(gmm.means_)
-	pp.pprint(metrics.silhouette_score(np_arr_train, gmm.means_, metric='euclidean'))
+	print "Silhouette"
+	sil_score = 0
+	for i in range(10):
+		sil_score += metrics.silhouette_score(np_arr_train, gmm.predict(np_arr_train), metric='euclidean', sample_size=5000)
 
-	pp.pprint(metrics.homogeneity_score(np_arr_label, gmm.means_))
-	pp.pprint(metrics.completeness_score(np_arr_label, gmm.means_))
+	print sil_score/10
 
-def cluster_DB(classif_data, vect_data, filename):
+	print "Homog Comp VMeasure"
+	pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, gmm.predict(np_arr_train)))
+
+	return gmm.predict(np_arr_train)
+
+def cluster_DB(classif_data, vect_data):
 	db = DBSCAN()
 
 	np_arr_train = np.array(vect_data["train_vect"])
 	np_arr_label = np.array(classif_data["topics"])
+	np_arr_test = np.array(vect_data["test_vect"])
+
+	print "DB"
 
 	db.fit(np_arr_train)
-	pp.pprint(db.labels_)
-	pp.pprint(metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean'))
+	#pp.pprint(db.labels_)
+	#pp.pprint(metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean'))
 
-	pp.pprint(metrics.homogeneity_score(np_arr_label, db.labels_))
-	pp.pprint(metrics.completeness_score(np_arr_label, db.labels_))
+	print "Silhouette" 
+	sil_score = 0
+	for i in range(10):
+		sil_score += metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean', sample_size=5000)
+
+	print sil_score/10
+
+	print "Homog Comp VMeasure"
+	pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, db.labels_))
+
+	return db.labels_
 
 
 def get_ngram_classif_data(articles):
@@ -564,8 +680,8 @@ def build_run_NB(classif_data, vect_data, filename):
 	#This involves grabbing the train data and labels
 	vect = vect_data["vectorizer"]
 
-	np_arr_train = np.array(vect_data["train_vect"])
-	np_arr_label = np.array(classif_data["topics"])
+	np_arr_train = vect_data["train_vect"]
+	np_arr_label = classif_data["topics"]
 
 	run_k_fold(GaussianNB, np_arr_train, np_arr_label, filename)
 
@@ -574,8 +690,8 @@ def build_run_DecTree(classif_data, vect_data, filename):
 	#This involves grabbing the train data and labels
 	vect = vect_data["vectorizer"]
 
-	np_arr_train = np.array(vect_data["train_vect"])
-	np_arr_label = np.array(classif_data["topics"])
+	np_arr_train = vect_data["train_vect"]
+	np_arr_label = classif_data["topics"]
 
 	run_k_fold(tree.DecisionTreeClassifier, np_arr_train, np_arr_label, filename)
 
@@ -586,8 +702,8 @@ def build_run_RF(classif_data, vect_data, filename):
 	#This involves grabbing the train data and labels
 	vect = vect_data["vectorizer"]
 
-	np_arr_train = np.array(vect_data["train_vect"])
-	np_arr_label = np.array(classif_data["topics"])
+	np_arr_train = vect_data["train_vect"]
+	np_arr_label = classif_data["topics"]
 
 	run_k_fold(RandomForestClassifier, np_arr_train, np_arr_label, filename)
 
@@ -735,15 +851,178 @@ def run_trigram_topic_model(proc_arts, classif=1):
 
 
 def run_bag_of_words_cluster(proc_arts, classif=1):
-	bow_classif_data = get_bow_classif_data(proc_arts)
-	bow_vect_data = get_bow_vect_data(bow_classif_data)
+	bow_classif_data = get_bow_classif_data_test(proc_arts)
+	bow_vect_data = get_bow_vect_data_test(bow_classif_data)
 	
 	# if classif == 1:
-	cluster_kmeans(bow_classif_data, bow_vect_data, "clus")
-	cluster_DB(bow_classif_data, bow_vect_data, "clus")
-	cluster_EM(bow_classif_data, bow_vect_data, "clus")
-	
+	test_preds = clust_DecTree(bow_classif_data, bow_vect_data)
+	k_preds = cluster_kmeans(bow_classif_data, bow_vect_data)
+	db_preds = cluster_DB(bow_classif_data, bow_vect_data)
+	em_preds = cluster_EM(bow_classif_data, bow_vect_data)
+
+
+	correct = {"em": 0, "k": 0, "db": 0}
+	for i in range(len(classif_data["topics"])):
+		if classif_data["topics"][i] == k_preds[i]:
+			correct["k"] += 1	
+		if classif_data["topics"][i] == em_preds[i]:
+			correct["em"] += 1	
+		if classif_data["topics"][i] == db_preds[i]:
+			correct["db"] += 1		
+
+	print "Comparisons \n"
+	print "Actual: " + str(len(preds))
+	print "K-means: " + str(correct["k"])
+	print "DBSCAN: " + str(correct["db"])
+	print "EM: " + str(correct["em"])
 	# elif classif == 2:
 	# 	build_run_DecTree(bow_classif_data, bow_vect_data, "bow-tree")
 	# elif classif == 3:
 	# 	build_run_RF(bow_classif_data, bow_vect_data, "bow-rf")
+
+
+def run_bag_of_words_test(proc_arts):
+	bow_classif_data = get_bow_classif_data_test(proc_arts)
+	bow_vect_data = get_bow_vect_data_test(bow_classif_data)
+
+	test_DecTree(bow_classif_data, bow_vect_data, "bow-tree-test")
+
+
+def test_DecTree(classif_data, vect_data, filename):
+	#First, we need to arrange our data 
+	#This involves grabbing the train data and labels
+	dt = tree.DecisionTreeClassifier()
+	vect = vect_data["vectorizer"]
+
+	np_arr_train = np.array(vect_data["train_vect"])
+	np_arr_test = np.array(vect_data["test_vect"])
+	np_arr_label = np.array(classif_data["topics"])
+	test_labels = classif_data["test_topics"]
+
+	#train the classifier
+	dt.fit(np_arr_train, np_arr_label)
+
+	preds = dt.predict(np_arr_test)
+
+	print_str = ""
+
+	true_p = [0,0,0,0,0,0,0,0,0,0]
+	false_p = [0,0,0,0,0,0,0,0,0,0]
+	false_n = [0,0,0,0,0,0,0,0,0,0]
+	for i in range(len(preds)):
+		if preds[i] == test_labels[i]:
+			true_p[test_labels[i]] += 1
+		else:
+			false_p[preds[i]] += 1
+			false_n[test_labels[i]] += 1
+
+	accuracy = sum(true_p) / len(preds)
+	num_class = 10
+
+	prec = sum(true_p) / (sum(true_p) + sum(false_p))
+	reca = sum(true_p) / (sum(true_p) + sum(false_n)) 
+
+
+	print_str += "*~"*40 + "\n"
+	print_str += "Tested: " + str(len(preds)) + "\n"
+	print_str += "True Pos: " + "\n"
+	print_str += str(true_p) + "\n"
+	print_str += "False Pos: " + "\n"
+	print_str += str(false_p)  + "\n"
+	print_str += "False Neg: " + "\n"
+	print_str += str(false_n)  + "\n"
+
+	print_str += "Recall: " + str(reca) + " Prec: " + str(prec)  + "\n"
+	print_str += "Accuracy " + str(accuracy) + "\n"
+
+	f = open(filename, "w")
+	f.write(print_str)
+	f.close()
+
+def clust_DecTree(classif_data, vect_data):
+	#First, we need to arrange our data 
+	#This involves grabbing the train data and labels
+	dt = tree.DecisionTreeClassifier()
+	vect = vect_data["vectorizer"]
+
+	np_arr_train = np.array(vect_data["train_vect"])
+	np_arr_test = np.array(vect_data["test_vect"])
+	np_arr_label = np.array(classif_data["topics"])
+	test_labels = classif_data["test_topics"]
+
+	#train the classifier
+	dt.fit(np_arr_train, np_arr_label)
+
+	preds = dt.predict(np_arr_train)
+
+	return preds
+
+def get_bow_vect_data_test(classif_data):
+	vect = TfidfVectorizer()
+	vect.fit_transform([classif_data["corpus"]])
+
+	#Before we begin, get rid of any test articles with no topic
+	vect_token_sets = []
+	vect_test_sets = []
+	for i in classif_data["train_tokens"]:
+		vect_token_sets.append(vect.transform([i]).toarray())
+
+	for i in classif_data["test_tokens"]:
+		vect_test_sets.append(vect.transform([i]).toarray())
+
+
+	train_set = []
+	test_set = []
+	for i in vect_token_sets:
+		train_set.append(i[0])
+	for i in vect_test_sets:
+		test_set.append(i[0])
+
+	return {
+		"vectorizer": vect,
+		"train_vect": train_set,
+		"test_vect": test_set
+	}
+
+def get_bow_classif_data_test(articles):
+	token_train_sets = []
+	token_test_sets = []
+	corpus = ""
+	labels = []
+	test_labels = []
+	for article in articles:
+		#print article["train"]
+		if article["train"] == True:
+			doc = ""
+			for i in article["body_token_raw"]:
+				if i["ne"]:
+					doc += " " + i["token"]
+					corpus += " " + i["token"]
+				else:
+					doc += " " + i["stem"]
+					corpus += " " + i["stem"]
+
+
+			for i in article['topics']:
+				token_train_sets.append(doc)
+				labels.append(topics_ids[i])
+
+		else:
+			doc = ""
+			for i in article["body_token_raw"]:
+				if i["ne"]:
+					doc += " " + i["token"]
+				else:
+					doc += " " + i["stem"]
+
+			for i in article["topics"]:
+				token_test_sets.append(doc)
+				test_labels.append(topics_ids[i])
+
+	return {
+		"train_tokens": token_train_sets,
+		"test_tokens": token_test_sets,
+		"corpus": corpus,
+		"topics": labels,
+		"test_topics": test_labels
+	}
