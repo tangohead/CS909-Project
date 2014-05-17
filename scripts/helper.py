@@ -30,7 +30,7 @@ from sklearn import tree, datasets, cross_validation, metrics, mixture
 from sklearn.cross_validation import KFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans, DBSCAN, Ward
 from sklearn.metrics import pairwise_distances
 
 pp = pprint.PrettyPrinter(indent=4)
@@ -494,38 +494,38 @@ def cluster_kmeans(classif_data, vect_data):
 	#pp.pprint(km.labels_)
 	print "Kmeans"
 	print "Silhouette" 
-	sil_score = 0
-	for i in range(10):
-		sil_score += metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean', sample_size =5000)
+	# sil_score = 0
+	# for i in range(10):
+	# 	sil_score += metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean')
 
-	print sil_score/10
+	# print sil_score/10
 
-	print "Homog Comp VMeasure"
-	pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, km.labels_))
+	# print "Homog Comp VMeasure"
+	# pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, km.labels_))
 
 	return km.labels_
 
-def cluster_EM(classif_data, vect_data):
-	gmm = mixture.GMM(n_components=10)
+def cluster_ward(classif_data, vect_data):
+	ward = Ward(n_clusters=10)
 
 	np_arr_train = np.array(vect_data["train_vect"])
 	np_arr_label = np.array(classif_data["topics"])
 	np_arr_test = np.array(vect_data["test_vect"])
 
-	print "GMM"
+	labels = ward.fit_predict(np_arr_train)
+	#pp.pprint(km.labels_)
+	print "Ward"
+	print "Silhouette" 
+	# sil_score = 0
+	# for i in range(10):
+	# 	sil_score += metrics.silhouette_score(np_arr_train, labels, metric='euclidean')
 
-	gmm.fit(np_arr_train)
-	print "Silhouette"
-	sil_score = 0
-	for i in range(10):
-		sil_score += metrics.silhouette_score(np_arr_train, gmm.predict(np_arr_train), metric='euclidean', sample_size=5000)
+	# print sil_score/10
 
-	print sil_score/10
+	# print "Homog Comp VMeasure"
+	# pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, labels))
 
-	print "Homog Comp VMeasure"
-	pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, gmm.predict(np_arr_train)))
-
-	return gmm.predict(np_arr_train)
+	return labels
 
 def cluster_DB(classif_data, vect_data):
 	db = DBSCAN()
@@ -541,14 +541,14 @@ def cluster_DB(classif_data, vect_data):
 	#pp.pprint(metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean'))
 
 	print "Silhouette" 
-	sil_score = 0
-	for i in range(10):
-		sil_score += metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean', sample_size=5000)
+	# sil_score = 0
+	# for i in range(10):
+	# 	sil_score += metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean')
 
-	print sil_score/10
+	# print sil_score/10
 
-	print "Homog Comp VMeasure"
-	pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, db.labels_))
+	# print "Homog Comp VMeasure"
+	# pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, db.labels_))
 
 	return db.labels_
 
@@ -855,26 +855,75 @@ def run_bag_of_words_cluster(proc_arts, classif=1):
 	bow_vect_data = get_bow_vect_data_test(bow_classif_data)
 	
 	# if classif == 1:
-	test_preds = clust_DecTree(bow_classif_data, bow_vect_data)
+	#test_preds = clust_DecTree(bow_classif_data, bow_vect_data)
 	k_preds = cluster_kmeans(bow_classif_data, bow_vect_data)
 	db_preds = cluster_DB(bow_classif_data, bow_vect_data)
-	em_preds = cluster_EM(bow_classif_data, bow_vect_data)
+	ward_preds = cluster_ward(bow_classif_data, bow_vect_data)
 
 
-	correct = {"em": 0, "k": 0, "db": 0}
-	for i in range(len(classif_data["topics"])):
-		if classif_data["topics"][i] == k_preds[i]:
-			correct["k"] += 1	
-		if classif_data["topics"][i] == em_preds[i]:
-			correct["em"] += 1	
-		if classif_data["topics"][i] == db_preds[i]:
-			correct["db"] += 1		
+	# correct = {"wd": 0, "k": 0, "db": 0}
+	# for i in range(len(bow_classif_data["topics"])):
+	# 	if bow_classif_data["topics"][i] == k_preds[i]:
+	# 		correct["k"] += 1	
+	# 	if bow_classif_data["topics"][i] == ward_preds[i]:
+	# 	 	correct["wd"] += 1	
+	# 	if bow_classif_data["topics"][i] == db_preds[i]:
+	# 		correct["db"] += 1	
+
+	# #We want to
+	k_label_grps = [[],[],[],[],[],[],[],[],[],[]]
+	db_label_grps = [[],[],[],[],[],[],[],[],[],[]]
+	wd_label_grps = [[],[],[],[],[],[],[],[],[],[]]
+
+	#We want the indices of each item in each cluster
+	for i in range(len(k_preds)):
+		k_label_grps[k_preds[i]].append(i)
+		db_label_grps[db_preds[i]].append(i)
+		wd_label_grps[wd_preds[i]].append(i)
+
+	k_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
+	db_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
+	wd_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
+	for i in range(len(k_label_grps)):
+		for j in range(len(k_label_grps[i])):
+			k_actual_labels[i].append(bow_classif_data["topics"][j])
+			db_actual_labels[i].append(bow_classif_data["topics"][j])
+			wd_actual_labels[i].append(bow_classif_data["topics"][j])
+
+
+	k_label_counts = []
+	for i in range(len(k_actual_labels)):
+		label_count = [0,0,0,0,0,0,0,0,0,0]
+		for j in range(len(k_actual_labels[i])):
+			label_count[k_actual_labels[i][j]] += 1
+		k_label_counts.append(label_count)
+
+	db_label_counts = []
+	for i in range(len(db_actual_labels)):
+		label_count = [0,0,0,0,0,0,0,0,0,0]
+		for j in range(len(db_actual_labels[i])):
+			label_count[db_actual_labels[i][j]] += 1
+		db_label_counts.append(label_count)
+
+	wd_label_counts = []
+	for i in range(len(wd_actual_labels)):
+		label_count = [0,0,0,0,0,0,0,0,0,0]
+		for j in range(len(wd_actual_labels[i])):
+			label_count[wd_actual_labels[i][j]] += 1
+		wd_label_counts.append(label_count)
+
+	print "K"
+	pp.pprint(k_label_counts)
+	print "db"
+	pp.pprint(db_label_counts)
+	print "wd"
+	pp.pprint(wd_label_counts)
 
 	print "Comparisons \n"
-	print "Actual: " + str(len(preds))
-	print "K-means: " + str(correct["k"])
-	print "DBSCAN: " + str(correct["db"])
-	print "EM: " + str(correct["em"])
+	print "Actual: " + str(len(bow_classif_data["topics"]))
+	# print "K-means: " + str(correct["k"])
+	# print "DBSCAN: " + str(correct["db"])
+	# print "Ward: " + str(correct["wd"])
 	# elif classif == 2:
 	# 	build_run_DecTree(bow_classif_data, bow_vect_data, "bow-tree")
 	# elif classif == 3:
