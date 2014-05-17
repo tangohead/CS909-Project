@@ -7,8 +7,9 @@ A range of packages are needed to run this system. It requires the latest versio
 + Scipy
 
 To run the system, use 
+```
     python load_data.py A B C D
-
+```
 Parameters
 ==========
 A is the _mode_:
