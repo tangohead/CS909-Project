@@ -77,21 +77,15 @@ def load_data(directory, limit=False, limit_num=1):
 	limit_exceeded = False
 	print limit_num
 
-	#Temp hack
-	#xml_files = [xml_files[0], xml_files[18]]
-
+	#Iterate through files
 	for xml_f in xml_files:
 		if limit_exceeded == False:
 			log.write("Loading " + xml_f + "..." + "\n")
 			log.flush()
 
-			# parsed_xml = ET.parse(xml_f)
 			soup = BeautifulSoup(open(xml_f), ["lxml", "xml"])
 			#Grab all the articles
 			load_arts = soup.find_all('REUTERS')
-			#print soup.prettify()
-			#pp.pprint(soup.find_all('body'))
-			#
 
 			for art in load_arts:
 				tmp_art = {}
@@ -99,7 +93,10 @@ def load_data(directory, limit=False, limit_num=1):
 				#There should only be one text section in the article
 				text_section = art.findAll('TEXT')[0]
 
-				#pp.pprint(text_section.body)
+				#For all of the below, if the component is empty, we don't
+				#add it
+
+				#Grab the body
 				body_text = text_section.findAll('BODY')
 				if len(body_text) > 0:
 					tmp_art['body'] = body_text[0].contents[0]
@@ -107,7 +104,7 @@ def load_data(directory, limit=False, limit_num=1):
 					tmp_art['body'] =  ""
 					do_not_add = True
 
-
+				#Get if it is train or test
 				if art.attrs["LEWISSPLIT"] == "TRAIN":
 					tmp_art["train"] = True
 				elif art.attrs["LEWISSPLIT"] == "TEST":
@@ -115,6 +112,7 @@ def load_data(directory, limit=False, limit_num=1):
 				else:
 					do_not_add = True
 
+				#Get the topics and separate them
 				topics = art.findAll('TOPICS')[0].findAll('D')
 				tmp_art["topics"] = []
 				for i in topics:
@@ -125,15 +123,15 @@ def load_data(directory, limit=False, limit_num=1):
 				if do_not_add == False:
 					if (len(tmp_art["topics"]) > 0 or tmp_art["train"] == False):
 						articles.append(tmp_art)
-					#pp.pprint()
 				
-
+			#To handle limited loading
 			count += 1
 			if limit == True and count >= limit_num:
 				limit_exceeded = True
 
 	return articles
 
+#Perform basic trimming and tokenizing on the articles
 def trim_and_token(articles):
 	cleaned_articles = []
 
@@ -147,10 +145,12 @@ def trim_and_token(articles):
 		art['body'] = re.sub("[+/<>()'\"-]", " ", art['body'])
 		art['body'] = re.sub("[0-9]+th", " ", art['body'])
 		tokens = nltk.word_tokenize(art['body'])
-		#pp.pprint(tokens)
+
 		punc_count = 0
 		trimmed_tokens = []
 
+		#Rather than do in place deletion, we mark it as none
+		#and bin it at the end
 		for i in range(0,len(tokens)):
 			token = tokens[i]
 			#Get rid of dots and commas, typically used in acronyms
@@ -168,6 +168,7 @@ def trim_and_token(articles):
 			if token.lower in stopwords.words('english'):
 				tokens[i] = None
 
+			#If we can convert it to a number we want to get rid
 			try:
 				float(token)
 				tokens[i] = None
@@ -186,6 +187,7 @@ def trim_and_token(articles):
 
 	return cleaned_articles
 
+#Perform language-based processing
 def lang_proc(articles):
 	lemtz = WordNetLemmatizer()
 	port = PorterStemmer()
@@ -197,6 +199,8 @@ def lang_proc(articles):
 			log.flush()
 		count += 1
 
+		#POS tag so that we can NE tag, we don't actually need the
+		#full POS stuff
 		pos_tag_art = nltk.pos_tag(article["body_tokens"])
 		ne_chunked = nltk.chunk.ne_chunk(pos_tag_art)
 
@@ -205,6 +209,7 @@ def lang_proc(articles):
 		full_list = []
 
 		for token in ne_chunked:
+			#if it's a NE, we mark it so and join it with underscores
 			if isinstance(token, nltk.Tree):
 				ne_list = []
 				for i in token:
@@ -217,15 +222,16 @@ def lang_proc(articles):
 			else:
 				#We remove stopwords at this stage too
 				if token[0] not in stopwords.words('english'):
+					#Stem and lemmatize to generalise
 					tmp_lst={
 						"token": token[0].lower(),
-						#"pos": token[1],
 						"lemma": lemtz.lemmatize(token[0].lower()),
 						"stem": port.stem(token[0].lower()),
 						"ne": False
 						}
 					token_list.append(tmp_lst)
 
+		#Only add the stuff we need to keep memory usage down
 		new_art = {
 			"train": article["train"],
 			"body_token_raw": token_list,
@@ -237,8 +243,10 @@ def lang_proc(articles):
 
 # TOPIC MODEL GENERATORS
 
+#Generate a topic model for unigrams
 def gen_topic_model(articles):
 	token_list = []
+	#Generate the corpus
 	for article in articles:
 		doc = []
 		for token in article['body_token_raw']:
@@ -252,17 +260,15 @@ def gen_topic_model(articles):
 			doc.append(append_str)
 		token_list.append(doc)
 
-
+	#Sep to a dictionary and make the corpus
 	dictionary = corpora.Dictionary(token_list)
 	corpus = [dictionary.doc2bow(token) for token in token_list]
 
-
+	#Train the topic model with TFIDF
 	tfidf = models.TfidfModel(corpus)
 	corpus_tdidf = tfidf[corpus]
 	mod = models.ldamodel.LdaModel(corpus, id2word=dictionary, num_topics=10)
 	
-	#pp.pprint(mod.show_topics(formatted=True))
-
 	#Now run through with all our articles to get the topic weighting vector for each
 	#We can classify on this
 	article_groups = []
@@ -270,19 +276,20 @@ def gen_topic_model(articles):
 		article_groups.append(dictionary.doc2bow(i))
 
 	unproc_article_topic_weights = mod.inference(article_groups)
-	#print unproc_article_topic_weights.__class__.__name__
+
+	#Get the rep of all of our topics
 	for i in range(len(articles)):
 		articles[i]["topic_weights"] = unproc_article_topic_weights[0][i]
-
-	#print articles[10]["topic_weights"]
 
 	return {
 		"model":mod,
 		"articles": articles
 		}
 
+#Generate a topic model for other ngrams
 def gen_topic_model_ngram(articles):
 	token_list = []
+	#Generate the corpus
 	for article in articles:
 		doc = []
 		for token in article['ngrams']:
@@ -292,18 +299,14 @@ def gen_topic_model_ngram(articles):
 			doc.append(append_str)
 		token_list.append(doc)
 
-
+	#Sep to a dictionary and make the corpus
 	dictionary = corpora.Dictionary(token_list)
 	corpus = [dictionary.doc2bow(token) for token in token_list]
 
-	for i in corpus[0:10]:
-		print i
-
+	#Produce our TFIDF model
 	tfidf = models.TfidfModel(corpus)
 	corpus_tdidf = tfidf[corpus]
 	mod = models.ldamodel.LdaModel(corpus, id2word=dictionary, num_topics=10)
-
-	#pp.pprint(mod.show_topics(formatted=True))
 
 	#Now run through with all our articles to get the topic weighting vector for each
 	#We can classify on this
@@ -312,11 +315,10 @@ def gen_topic_model_ngram(articles):
 		article_groups.append(dictionary.doc2bow(i))
 
 	unproc_article_topic_weights = mod.inference(article_groups)
-	#print unproc_article_topic_weights.__class__.__name__
+
+	#Get topic reps
 	for i in range(len(articles)):
 		articles[i]["topic_weights"] = unproc_article_topic_weights[0][i]
-
-	#print articles[10]["topic_weights"]
 
 	return {
 		"model":mod,
@@ -336,6 +338,9 @@ def gen_ngrams(articles, n):
 	else:
 		tok_stash = "trimmed_trig.p"
 
+	#Check we've not got a pre-produced one first
+	#This method pickles the final result as this process can take upwards
+	#of 10 hours. 
 	if os.path.isfile(tok_stash) == False:
 		for article in articles:
 			if count % 500 == 0:
@@ -344,7 +349,8 @@ def gen_ngrams(articles, n):
 			count += 1
 
 			ngram_list = []
-			#pp.pprint( article)
+			
+			#Create the ngram with underscores
 			for i in range(len(article['body_token_raw'])-n):
 				ngram_list.append("_".join(article['body_token_raw'][j]["token"] for j in range(i, i+n)))
 			
@@ -359,6 +365,8 @@ def gen_ngrams(articles, n):
 		else:
 			stash = trigram_stash
 
+		#Now count how many times each one appears across the corpus
+		#Takes a long time
 		if os.path.isfile(stash) == False:
 			count = 0
 			for article in ngram_articles:
@@ -388,6 +396,7 @@ def gen_ngrams(articles, n):
 			stash = "trigram_keep.p"
 
 		if os.path.isfile(stash) == False:
+			#Only keep the ones that appear at least 10 times
 			for i in ngram_freq_dict:
 				if ngram_freq_dict[i] >= 10:
 					ngrams_to_keep.append(i)
@@ -400,6 +409,7 @@ def gen_ngrams(articles, n):
 			ngrams_to_keep = pickle.load(store)
 			store.close()
 
+		#Check if an ngram is worth keeping, if not throw away
 		for i in ngram_articles:
 			new_ngrams = []
 			for ngram in i["ngrams"]:
@@ -424,14 +434,16 @@ def gen_ngrams(articles, n):
 
 # DATA CONVERSION
 
+#Produce corpus for training and classification
+#Prepares data for vector space model production
 def get_bow_classif_data(articles):
 	token_train_sets = []
 	token_test_sets = []
 	corpus = ""
 	labels = []
 
+	#Separate into training and test lists
 	for article in articles:
-		#print article["train"]
 		if article["train"] == True:
 			doc = ""
 			for i in article["body_token_raw"]:
@@ -442,7 +454,7 @@ def get_bow_classif_data(articles):
 					doc += " " + i["stem"]
 					corpus += " " + i["stem"]
 
-
+			#Insert article for each topic occurence 
 			for i in article['topics']:
 				token_train_sets.append(doc)
 				labels.append(topics_ids[i])
@@ -465,12 +477,14 @@ def get_bow_classif_data(articles):
 		"topics": labels,
 	}
 
+#Produce vector space model for each document
 def get_bow_vect_data(classif_data):
 	vect = TfidfVectorizer()
 	vect.fit_transform([classif_data["corpus"]])
 
 	vect_token_sets = []
 
+	#Get all our documents as VSMs
 	for i in classif_data["train_tokens"]:
 		vect_token_sets.append(vect.transform([i]).toarray())
 
@@ -483,6 +497,7 @@ def get_bow_vect_data(classif_data):
 		"train_vect": train_set
 	}
 
+#Produce KMeans cluster and test it
 def cluster_kmeans(classif_data, vect_data):
 	km = KMeans(n_clusters=10)
 
@@ -491,20 +506,13 @@ def cluster_kmeans(classif_data, vect_data):
 	np_arr_test = np.array(vect_data["test_vect"])
 
 	km.fit(np_arr_train)
-	#pp.pprint(km.labels_)
+
 	print "Kmeans"
-	print "Silhouette" 
-	# sil_score = 0
-	# for i in range(10):
-	# 	sil_score += metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean')
-
-	# print sil_score/10
-
-	# print "Homog Comp VMeasure"
-	# pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, km.labels_))
+	sil_score += metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean')
 
 	return km.labels_
 
+#Produce Ward cluster and test it
 def cluster_ward(classif_data, vect_data):
 	ward = Ward(n_clusters=10)
 
@@ -513,20 +521,12 @@ def cluster_ward(classif_data, vect_data):
 	np_arr_test = np.array(vect_data["test_vect"])
 
 	labels = ward.fit_predict(np_arr_train)
-	#pp.pprint(km.labels_)
 	print "Ward"
-	print "Silhouette" 
-	# sil_score = 0
-	# for i in range(10):
-	# 	sil_score += metrics.silhouette_score(np_arr_train, labels, metric='euclidean')
-
-	# print sil_score/10
-
-	# print "Homog Comp VMeasure"
-	# pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, labels))
+	sil_score += metrics.silhouette_score(np_arr_train, labels, metric='euclidean')
 
 	return labels
 
+#Produce DBSCAN cluster and test it 
 def cluster_DB(classif_data, vect_data):
 	db = DBSCAN()
 
@@ -537,29 +537,19 @@ def cluster_DB(classif_data, vect_data):
 	print "DB"
 
 	db.fit(np_arr_train)
-	#pp.pprint(db.labels_)
-	#pp.pprint(metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean'))
-
-	print "Silhouette" 
-	# sil_score = 0
-	# for i in range(10):
-	# 	sil_score += metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean')
-
-	# print sil_score/10
-
-	# print "Homog Comp VMeasure"
-	# pp.pprint(metrics.homogeneity_completeness_v_measure(np_arr_label, db.labels_))
+	sil_score += metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean')
 
 	return db.labels_
 
-
+#Produce corpus for training and classification
+#Prepares data for vector space model production
 def get_ngram_classif_data(articles):
 	token_train_sets = []
 	token_test_sets = []
 	corpus = ""
 	labels = []
 
-	
+	#Separate out to test and train and generate the corpus
 	for article in articles:
 		if article['train'] == True:
 			doc = ""
@@ -567,7 +557,7 @@ def get_ngram_classif_data(articles):
 				doc += " " + i
 				corpus += " " + i
 
-
+			#Enter article once for each of its topics
 			for i in article['topics']:
 				token_train_sets.append(doc)
 				labels.append(topics_ids[i])
@@ -587,22 +577,30 @@ def get_ngram_classif_data(articles):
 	}
 
 # WORD FEATURE CLASSIFIERS
+#General K fold cross validator
+#Note this is general so we can pass in some classifier type and
+# let it do the rest
 def run_k_fold(classif, train_set, label_set, filename):
-
+	#Produce our 10 folds of train/test data
 	kf = KFold(len(label_set), n_folds=10, indices=True)
 
 	fold_count = 1
 	print_str = ""
 	for train, test in kf:
+
 		log.write("Fold " + str(fold_count) + "\n")
 		log.flush()
 		fold_count += 1
+
+		#Init the general classifier
 		cf = classif()
 		#build our train & test set
 		train_examples = []
 		train_labels = []
 		test_examples = []
 		test_labels = []
+
+		#Organise our testing and training sets from the training set
 		for i in train:
 			train_examples.append(train_set[i])
 			train_labels.append(label_set[i])
@@ -618,6 +616,8 @@ def run_k_fold(classif, train_set, label_set, filename):
 		true_p = [0,0,0,0,0,0,0,0,0,0]
 		false_p = [0,0,0,0,0,0,0,0,0,0]
 		false_n = [0,0,0,0,0,0,0,0,0,0]
+
+		#Now count all of our TP/FP/FNs
 		for i in range(len(preds)):
 			if preds[i] == test_labels[i]:
 				true_p[test_labels[i]] += 1
@@ -625,6 +625,7 @@ def run_k_fold(classif, train_set, label_set, filename):
 				false_p[preds[i]] += 1
 				false_n[test_labels[i]] += 1
 
+		#Produce our statistics
 		accuracy = sum(true_p) / len(preds)
 
 		macro_prec = 0.0
@@ -639,6 +640,7 @@ def run_k_fold(classif, train_set, label_set, filename):
 
 		num_class = 10
 
+		#Calc Macro and micro averaged measures
 		for i in range(num_class):
 			if (true_p[i]+false_n[i]) > 0.0:
 				macro_reca += true_p[i] / (true_p[i]+false_n[i])
@@ -658,6 +660,8 @@ def run_k_fold(classif, train_set, label_set, filename):
 		micro_reca = mic_r_top / mic_r_btm
 		micro_prec = mic_p_top / mic_p_btm
 
+
+		#Output to file
 		print_str += "*~"*40 + "\n"
 		print_str += "Tested: " + str(len(preds)) + "\n"
 		print_str += "True Pos: " + "\n"
@@ -675,6 +679,7 @@ def run_k_fold(classif, train_set, label_set, filename):
 	f.write(print_str)
 	f.close()
 
+#Handler to run and test an NB classifier
 def build_run_NB(classif_data, vect_data, filename):
 	#First, we need to arrange our data 
 	#This involves grabbing the train data and labels
@@ -685,6 +690,7 @@ def build_run_NB(classif_data, vect_data, filename):
 
 	run_k_fold(GaussianNB, np_arr_train, np_arr_label, filename)
 
+#Handler to run and test an DT classifier
 def build_run_DecTree(classif_data, vect_data, filename):
 	#First, we need to arrange our data 
 	#This involves grabbing the train data and labels
@@ -695,6 +701,7 @@ def build_run_DecTree(classif_data, vect_data, filename):
 
 	run_k_fold(tree.DecisionTreeClassifier, np_arr_train, np_arr_label, filename)
 
+#Handler to run and test an RF classifier
 def build_run_RF(classif_data, vect_data, filename):
 	rf = RandomForestClassifier()
 
@@ -709,7 +716,9 @@ def build_run_RF(classif_data, vect_data, filename):
 
 
 ## TOPIC MODEL CLASSIFIERS
-
+#We don't need to vectorise this, so we can just feed our topic reps
+#In to the classifiers
+#NB classifier
 def build_topmod_NB(articles, filename):
 	nb = GaussianNB()
 
@@ -720,6 +729,7 @@ def build_topmod_NB(articles, filename):
 	test_set = []
 	train_set = []
 	topic_labels = []
+	#Separate out the data
 	for i in articles:
 		if i["train"]:
 			for j in i['topics']:
@@ -728,12 +738,9 @@ def build_topmod_NB(articles, filename):
 			else:
 				test_set.append(i["topic_weights"])
 
-	#scores = cross_validation.cross_val_score(nb, train_set, np.array(topic_labels), cv=10)
-
-	#pp.pprint(scores)
-
 	run_k_fold(GaussianNB, np.array(train_set), np.array(topic_labels), filename)
 
+#DT classifier
 def build_topmod_DecTree(articles,  filename):
 	#First, we need to arrange our data 
 	#This involves grabbing the train data and labels
@@ -751,6 +758,7 @@ def build_topmod_DecTree(articles,  filename):
 
 	run_k_fold(tree.DecisionTreeClassifier, np.array(train_set), np.array(topic_labels), filename)
 
+#RF classifier
 def build_topmod_RF(articles, filename):
 	#First, we need to arrange our data 
 	#This involves grabbing the train data and labels
@@ -758,6 +766,7 @@ def build_topmod_RF(articles, filename):
 	test_set = []
 	train_set = []
 	topic_labels = []
+	#Separate out the data
 	for i in articles:
 		if i["train"]:
 			for j in i['topics']:
@@ -769,7 +778,7 @@ def build_topmod_RF(articles, filename):
 	run_k_fold(RandomForestClassifier, np.array(train_set), np.array(topic_labels), filename)
 
 # SYSTEM EXECUTORS
-
+# Handler method for BOW feature
 def run_bag_of_words(proc_arts, classif=1):
 	bow_classif_data = get_bow_classif_data(proc_arts)
 	bow_vect_data = get_bow_vect_data(bow_classif_data)
@@ -781,9 +790,11 @@ def run_bag_of_words(proc_arts, classif=1):
 	elif classif == 3:
 		build_run_RF(bow_classif_data, bow_vect_data, "bow-rf")
 
+# Handler method for bigram feature
 def run_bigram(proc_arts, classif=1):
 	bigrams = gen_ngrams(proc_arts, 2)
 
+	# Attempt to release some memory
 	proc_arts = None
 
 	bigram_classif_data = get_ngram_classif_data(bigrams)
@@ -799,9 +810,11 @@ def run_bigram(proc_arts, classif=1):
 	else:
 		build_run_RF(bigram_classif_data, bigram_vect_data, "big-rf")
 
+# Handler method for trigram feature
 def run_trigram(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
 
+	#Attempt to release some memory
 	proc_arts = None
 
 	trigram_classif_data = get_ngram_classif_data(trigrams)
@@ -817,6 +830,7 @@ def run_trigram(proc_arts, classif=1):
 	else:
 		build_run_RF(trigram_classif_data, trigram_vect_data, "trig-rf")
 
+# Handler method for BOW topic model feature
 def run_bow_topic_model(proc_arts, classif=1):
 	model = gen_topic_model(proc_arts)
 
@@ -827,6 +841,7 @@ def run_bow_topic_model(proc_arts, classif=1):
 	elif classif == 3:
 		build_topmod_RF(model["articles"], "bow-topmod-rf")
 
+# Handler method for bigram topic model feature
 def run_bigram_topic_model(proc_arts, classif=1):
 	bigrams = gen_ngrams(proc_arts, 2)
 	model = gen_topic_model_ngram(bigrams)
@@ -838,6 +853,7 @@ def run_bigram_topic_model(proc_arts, classif=1):
 	elif classif == 3:
 		build_topmod_RF(model["articles"], "big-topmod-rf")
 
+# Handler method for trigram topic model feature
 def run_trigram_topic_model(proc_arts, classif=1):
 	trigrams = gen_ngrams(proc_arts, 3)
 	model = gen_topic_model_ngram(trigrams)
@@ -849,38 +865,48 @@ def run_trigram_topic_model(proc_arts, classif=1):
 	elif classif == 3:
 		build_topmod_RF(model["articles"], "trig-topmod-rf")
 
-
+# Handler method for BOW clustering
 def run_bag_of_words_cluster(proc_arts, classif=1):
 	bow_classif_data = get_bow_classif_data_test(proc_arts)
 	bow_vect_data = get_bow_vect_data_test(bow_classif_data)
 	
-	# if classif == 1:
-	#test_preds = clust_DecTree(bow_classif_data, bow_vect_data)
-	k_preds = cluster_kmeans(bow_classif_data, bow_vect_data)
-	db_preds = cluster_DB(bow_classif_data, bow_vect_data)
-	ward_preds = cluster_ward(bow_classif_data, bow_vect_data)
+
+	k_preds = None
+	db_preds = None
+	wd_preds = None
+
+	#Check if we have already calculated our predictions
+	preds = None
+	if os.path.isfile("preds.p") == False:
+		k_preds = cluster_kmeans(bow_classif_data, bow_vect_data)
+		db_preds = cluster_DB(bow_classif_data, bow_vect_data)
+		wd_preds = cluster_ward(bow_classif_data, bow_vect_data)
+
+		preds = {"k":k_preds,"db":db_preds, "wd":wd_preds}
+		f = open("preds.p", "wb")
+		pickle.dump(preds, f)
+		f.close()
+	else:
+		f = open("preds.p", "rb")
+		preds = picke.load(f)
+		f.close()
+		k_preds = preds["k"]
+		db_preds = preds["db"]
+		wd_preds = preds["wd"]
 
 
-	# correct = {"wd": 0, "k": 0, "db": 0}
-	# for i in range(len(bow_classif_data["topics"])):
-	# 	if bow_classif_data["topics"][i] == k_preds[i]:
-	# 		correct["k"] += 1	
-	# 	if bow_classif_data["topics"][i] == ward_preds[i]:
-	# 	 	correct["wd"] += 1	
-	# 	if bow_classif_data["topics"][i] == db_preds[i]:
-	# 		correct["db"] += 1	
-
-	# #We want to
 	k_label_grps = [[],[],[],[],[],[],[],[],[],[]]
 	db_label_grps = [[],[],[],[],[],[],[],[],[],[]]
 	wd_label_grps = [[],[],[],[],[],[],[],[],[],[]]
 
-	#We want the indices of each item in each cluster
+	#We want the indices of each item in each cluster first
 	for i in range(len(k_preds)):
-		k_label_grps[k_preds[i]].append(i)
-		db_label_grps[db_preds[i]].append(i)
-		wd_label_grps[wd_preds[i]].append(i)
+		k_label_grps[int(round(k_preds[i]))].append(i)
+		db_label_grps[int(round(db_preds[i]))].append(i)
+		wd_label_grps[int(round(wd_preds[i]))].append(i)
 
+	#Now for each index, we need to get it's actual label from the origina
+	#article set
 	k_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
 	db_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
 	wd_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
@@ -890,7 +916,10 @@ def run_bag_of_words_cluster(proc_arts, classif=1):
 			db_actual_labels[i].append(bow_classif_data["topics"][j])
 			wd_actual_labels[i].append(bow_classif_data["topics"][j])
 
-
+	#Then we count the number of each actual label in each cluster of each
+	#alg
+	#We are basically trying to find out whether one type of label domiantes
+	#the cluster and thus if it is a decent cluster
 	k_label_counts = []
 	for i in range(len(k_actual_labels)):
 		label_count = [0,0,0,0,0,0,0,0,0,0]
@@ -921,22 +950,15 @@ def run_bag_of_words_cluster(proc_arts, classif=1):
 
 	print "Comparisons \n"
 	print "Actual: " + str(len(bow_classif_data["topics"]))
-	# print "K-means: " + str(correct["k"])
-	# print "DBSCAN: " + str(correct["db"])
-	# print "Ward: " + str(correct["wd"])
-	# elif classif == 2:
-	# 	build_run_DecTree(bow_classif_data, bow_vect_data, "bow-tree")
-	# elif classif == 3:
-	# 	build_run_RF(bow_classif_data, bow_vect_data, "bow-rf")
 
-
+#Run the optimal feature configuration
 def run_bag_of_words_test(proc_arts):
 	bow_classif_data = get_bow_classif_data_test(proc_arts)
 	bow_vect_data = get_bow_vect_data_test(bow_classif_data)
 
 	test_DecTree(bow_classif_data, bow_vect_data, "bow-tree-test")
 
-
+#Slight DT adjustment to run it on test data
 def test_DecTree(classif_data, vect_data, filename):
 	#First, we need to arrange our data 
 	#This involves grabbing the train data and labels
@@ -951,6 +973,7 @@ def test_DecTree(classif_data, vect_data, filename):
 	#train the classifier
 	dt.fit(np_arr_train, np_arr_label)
 
+	#Actually run on test data
 	preds = dt.predict(np_arr_test)
 
 	print_str = ""
@@ -958,6 +981,8 @@ def test_DecTree(classif_data, vect_data, filename):
 	true_p = [0,0,0,0,0,0,0,0,0,0]
 	false_p = [0,0,0,0,0,0,0,0,0,0]
 	false_n = [0,0,0,0,0,0,0,0,0,0]
+
+	#Count our stats and print them out
 	for i in range(len(preds)):
 		if preds[i] == test_labels[i]:
 			true_p[test_labels[i]] += 1
@@ -988,24 +1013,25 @@ def test_DecTree(classif_data, vect_data, filename):
 	f.write(print_str)
 	f.close()
 
-def clust_DecTree(classif_data, vect_data):
-	#First, we need to arrange our data 
-	#This involves grabbing the train data and labels
-	dt = tree.DecisionTreeClassifier()
-	vect = vect_data["vectorizer"]
+# def clust_DecTree(classif_data, vect_data):
+# 	#First, we need to arrange our data 
+# 	#This involves grabbing the train data and labels
+# 	dt = tree.DecisionTreeClassifier()
+# 	vect = vect_data["vectorizer"]
 
-	np_arr_train = np.array(vect_data["train_vect"])
-	np_arr_test = np.array(vect_data["test_vect"])
-	np_arr_label = np.array(classif_data["topics"])
-	test_labels = classif_data["test_topics"]
+# 	np_arr_train = np.array(vect_data["train_vect"])
+# 	np_arr_test = np.array(vect_data["test_vect"])
+# 	np_arr_label = np.array(classif_data["topics"])
+# 	test_labels = classif_data["test_topics"]
 
-	#train the classifier
-	dt.fit(np_arr_train, np_arr_label)
+# 	#train the classifier
+# 	dt.fit(np_arr_train, np_arr_label)
 
-	preds = dt.predict(np_arr_train)
+# 	preds = dt.predict(np_arr_train)
 
-	return preds
+# 	return preds
 
+#Slight adjustment to handle testing data for vectorisation
 def get_bow_vect_data_test(classif_data):
 	vect = TfidfVectorizer()
 	vect.fit_transform([classif_data["corpus"]])
@@ -1013,6 +1039,8 @@ def get_bow_vect_data_test(classif_data):
 	#Before we begin, get rid of any test articles with no topic
 	vect_token_sets = []
 	vect_test_sets = []
+
+	#Transform testing and training data
 	for i in classif_data["train_tokens"]:
 		vect_token_sets.append(vect.transform([i]).toarray())
 
@@ -1033,6 +1061,8 @@ def get_bow_vect_data_test(classif_data):
 		"test_vect": test_set
 	}
 
+#Slight adjustment to above to include article multiple times 
+#For topics 
 def get_bow_classif_data_test(articles):
 	token_train_sets = []
 	token_test_sets = []
@@ -1064,6 +1094,7 @@ def get_bow_classif_data_test(articles):
 				else:
 					doc += " " + i["stem"]
 
+			#Include test articles once for each of their topics
 			for i in article["topics"]:
 				token_test_sets.append(doc)
 				test_labels.append(topics_ids[i])

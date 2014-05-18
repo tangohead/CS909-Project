@@ -1,0 +1,80 @@
+\begin{thebibliography}{10}
+
+\bibitem{bs4}
+Beautiful soup 4.
+\newblock \url{http://www.crummy.com/software/BeautifulSoup/}.
+\newblock Accessed: 2014-05-12.
+
+\bibitem{nb}
+Gaussian na{\"i}ve {B}ayes.
+\newblock \url{http://scikit-learn.org/0.10/modules/naive_bayes.html}.
+\newblock Accessed: 2014-05-14.
+
+\bibitem{kf}
+K-fold cross validation.
+\newblock \url{http://scikit-learn.org/stable/modules/cross_validation.html}.
+\newblock Accessed: 2014-05-14.
+
+\bibitem{lxml}
+Lxml.
+\newblock \url{http://lxml.de/parsing.html}.
+\newblock Accessed: 2014-05-12.
+
+\bibitem{nltk}
+S.~Bird, E.~Klein, and E.~Loper.
+\newblock {\em Natural Language Processing with Python}.
+\newblock O'Reilly Media, 2009.
+
+\bibitem{lda}
+David~M Blei, Andrew~Y Ng, and Michael~I Jordan.
+\newblock Latent dirichlet allocation.
+\newblock {\em the Journal of machine Learning research}, 3:993--1022, 2003.
+
+\bibitem{randomforests}
+Leo Breiman.
+\newblock Random forests.
+\newblock {\em Machine learning}, 45(1):5--32, 2001.
+
+\bibitem{trees}
+Leo Breiman, Jerome Friedman, Charles~J Stone, and Richard~A Olshen.
+\newblock {\em Classification and regression trees}.
+\newblock CRC press, 1984.
+
+\bibitem{dbscan}
+Martin Ester, Hans peter Kriegel, Jörg S, and Xiaowei Xu.
+\newblock A density-based algorithm for discovering clusters in large spatial
+  databases with noise.
+\newblock pages 226--231. AAAI Press, 1996.
+
+\bibitem{kmeans}
+J.~MacQueen.
+\newblock Some methods for classification and analysis of multivariate
+  observations, 1967.
+
+\bibitem{scikit-learn}
+F.~Pedregosa, G.~Varoquaux, A.~Gramfort, V.~Michel, B.~Thirion, O.~Grisel,
+  M.~Blondel, P.~Prettenhofer, R.~Weiss, V.~Dubourg, J.~Vanderplas, A.~Passos,
+  D.~Cournapeau, M.~Brucher, M.~Perrot, and E.~Duchesnay.
+\newblock Scikit-learn: Machine learning in {P}ython.
+\newblock {\em Journal of Machine Learning Research}, 12:2825--2830, 2011.
+
+\bibitem{gensim}
+Radim {\v R}eh{\r u}{\v r}ek and Petr Sojka.
+\newblock {Software Framework for Topic Modelling with Large Corpora}.
+\newblock In {\em {Proceedings of the LREC 2010 Workshop on New Challenges for
+  NLP Frameworks}}, pages 45--50, Valletta, Malta, May 2010. ELRA.
+\newblock \url{http://is.muni.cz/publication/884893/en}.
+
+\bibitem{c45}
+Steven~L. Salzberg.
+\newblock C4.5: Programs for machine learning by j. ross quinlan. morgan
+  kaufmann publishers, inc., 1993.
+\newblock {\em Machine Learning}, 16(3):235--240, 1994.
+
+\bibitem{wards-meth}
+Joe~H Ward~Jr.
+\newblock Hierarchical grouping to optimize an objective function.
+\newblock {\em Journal of the American statistical association},
+  58(301):236--244, 1963.
+
+\end{thebibliography}
