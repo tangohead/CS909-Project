@@ -46,6 +46,11 @@ Martin Ester, Hans peter Kriegel, Jörg S, and Xiaowei Xu.
   databases with noise.
 \newblock pages 226--231. AAAI Press, 1996.
 
+\bibitem{lloyds}
+Stuart Lloyd.
+\newblock Least squares quantization in {PCM}.
+\newblock {\em Information Theory, IEEE Transactions on}, 28(2):129--137, 1982.
+
 \bibitem{kmeans}
 J.~MacQueen.
 \newblock Some methods for classification and analysis of multivariate

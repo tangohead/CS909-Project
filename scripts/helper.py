@@ -508,7 +508,8 @@ def cluster_kmeans(classif_data, vect_data):
 	km.fit(np_arr_train)
 
 	print "Kmeans"
-	sil_score += metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean')
+	sil_score = metrics.silhouette_score(np_arr_train, km.labels_, metric='euclidean')
+	print sil_score
 
 	return km.labels_
 
@@ -522,8 +523,9 @@ def cluster_ward(classif_data, vect_data):
 
 	labels = ward.fit_predict(np_arr_train)
 	print "Ward"
-	sil_score += metrics.silhouette_score(np_arr_train, labels, metric='euclidean')
-
+	sil_score = metrics.silhouette_score(np_arr_train, labels, metric='euclidean')
+	print sil_score
+	
 	return labels
 
 #Produce DBSCAN cluster and test it 
@@ -537,8 +539,8 @@ def cluster_DB(classif_data, vect_data):
 	print "DB"
 
 	db.fit(np_arr_train)
-	sil_score += metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean')
-
+	sil_score = metrics.silhouette_score(np_arr_train, db.labels_, metric='euclidean')
+	print sil_score
 	return db.labels_
 
 #Produce corpus for training and classification
@@ -867,8 +869,6 @@ def run_trigram_topic_model(proc_arts, classif=1):
 
 # Handler method for BOW clustering
 def run_bag_of_words_cluster(proc_arts, classif=1):
-	bow_classif_data = get_bow_classif_data_test(proc_arts)
-	bow_vect_data = get_bow_vect_data_test(bow_classif_data)
 	
 
 	k_preds = None
@@ -877,74 +877,127 @@ def run_bag_of_words_cluster(proc_arts, classif=1):
 
 	#Check if we have already calculated our predictions
 	preds = None
-	if os.path.isfile("preds.p") == False:
+	bow_classif_data = None
+	if os.path.isfile("preds.p") == False or os.path.isfile("data.p") == False:
+		print "Processing..."
+		bow_classif_data = get_bow_classif_data_test(proc_arts)
+		bow_vect_data = get_bow_vect_data_test(bow_classif_data)
 		k_preds = cluster_kmeans(bow_classif_data, bow_vect_data)
 		db_preds = cluster_DB(bow_classif_data, bow_vect_data)
 		wd_preds = cluster_ward(bow_classif_data, bow_vect_data)
 
 		preds = {"k":k_preds,"db":db_preds, "wd":wd_preds}
 		f = open("preds.p", "wb")
+		f2 = open("data.p", "wb")
 		pickle.dump(preds, f)
+		pickle.dump(bow_classif_data, f2)
 		f.close()
+		f2.close()
 	else:
+		print "Loading..."
 		f = open("preds.p", "rb")
-		preds = picke.load(f)
+		f2 = open("data.p", "rb")
+		preds = pickle.load(f)
+		bow_classif_data = pickle.load(f2)
 		f.close()
+		f2.close()
 		k_preds = preds["k"]
 		db_preds = preds["db"]
 		wd_preds = preds["wd"]
 
+	print "here"
 
-	k_label_grps = [[],[],[],[],[],[],[],[],[],[]]
-	db_label_grps = [[],[],[],[],[],[],[],[],[],[]]
-	wd_label_grps = [[],[],[],[],[],[],[],[],[],[]]
 
+	db_max = 0
+	for i in db_preds:
+		if i > db_max:
+			db_max = int(round(i))
+
+
+	k_label_grps = [None] * 10
+	db_label_grps = [None] * (db_max+1)
+	wd_label_grps = [None] * 10
+
+	for i in range(10):
+		k_label_grps[i] = []
+		wd_label_grps[i] = []
+
+	for i in range(db_max+1):
+		db_label_grps[i] = []
+
+	print k_label_grps
 	#We want the indices of each item in each cluster first
+	db_noise = 0
 	for i in range(len(k_preds)):
-		k_label_grps[int(round(k_preds[i]))].append(i)
-		db_label_grps[int(round(db_preds[i]))].append(i)
+		k_cluster_label = int(round(k_preds[i]))
+		k_label_grps[k_cluster_label].append(i)
+		if db_preds[i] == -1:
+			db_noise += 1
+		else:
+			db_label_grps[int(round(db_preds[i]))].append(i)
 		wd_label_grps[int(round(wd_preds[i]))].append(i)
+	print k_preds[0:10]
+	print k_label_grps[0][0:10]
+	print k_label_grps[0][20:30]
+	print k_label_grps[1][0:10]
 
+	print "here"
 	#Now for each index, we need to get it's actual label from the origina
 	#article set
-	k_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
-	db_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
-	wd_actual_labels = [[],[],[],[],[],[],[],[],[],[]]
+	k_actual_labels = [None] * 10
+	db_actual_labels = [None] * (db_max+1)
+	wd_actual_labels = [None] * 10
+
+	for i in range(10):
+		k_actual_labels[i] = []
+		wd_actual_labels[i] = []
+
+	for i in range(db_max+1):
+		db_actual_labels[i] = []
+
 	for i in range(len(k_label_grps)):
 		for j in range(len(k_label_grps[i])):
-			k_actual_labels[i].append(bow_classif_data["topics"][j])
-			db_actual_labels[i].append(bow_classif_data["topics"][j])
-			wd_actual_labels[i].append(bow_classif_data["topics"][j])
+			k_actual_labels[i].append(bow_classif_data["topics"][k_label_grps[i][j]])
 
+	for i in range(len(wd_label_grps)):
+		for j in range(len(wd_label_grps[i])):
+			wd_actual_labels[i].append(bow_classif_data["topics"][wd_label_grps[i][j]])
+
+	for i in range(len(db_label_grps)):
+		for j in range(len(db_label_grps[i])):
+			db_actual_labels[i].append(bow_classif_data["topics"][db_label_grps[i][j]])		
+
+	print "here"
 	#Then we count the number of each actual label in each cluster of each
 	#alg
 	#We are basically trying to find out whether one type of label domiantes
 	#the cluster and thus if it is a decent cluster
-	k_label_counts = []
+	k_label_counts = [None]*10
 	for i in range(len(k_actual_labels)):
 		label_count = [0,0,0,0,0,0,0,0,0,0]
 		for j in range(len(k_actual_labels[i])):
 			label_count[k_actual_labels[i][j]] += 1
-		k_label_counts.append(label_count)
+		k_label_counts[i] = label_count
 
-	db_label_counts = []
+	db_label_counts = [None]*(db_max+1)
 	for i in range(len(db_actual_labels)):
 		label_count = [0,0,0,0,0,0,0,0,0,0]
 		for j in range(len(db_actual_labels[i])):
 			label_count[db_actual_labels[i][j]] += 1
-		db_label_counts.append(label_count)
+		db_label_counts[i] = label_count
 
-	wd_label_counts = []
+	wd_label_counts = [None]*10
 	for i in range(len(wd_actual_labels)):
 		label_count = [0,0,0,0,0,0,0,0,0,0]
 		for j in range(len(wd_actual_labels[i])):
 			label_count[wd_actual_labels[i][j]] += 1
-		wd_label_counts.append(label_count)
+		wd_label_counts[i] = label_count
 
 	print "K"
 	pp.pprint(k_label_counts)
 	print "db"
 	pp.pprint(db_label_counts)
+	print "noise " + str(db_noise)
 	print "wd"
 	pp.pprint(wd_label_counts)
 
